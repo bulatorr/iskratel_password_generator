@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Iskratel Password Generator by bulatorr</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+        }
+        label {
+            display: block;
+            margin-top: 15px;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 6px;
+            font-size: 14px;
+        }
+        button {
+            margin-top: 20px;
+            padding: 10px 16px;
+            font-size: 14px;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 15px;
+            margin-top: 20px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+
+<h2>Генератор паролей Iskratel</h2>
+
+<p>
+    Пароль superadmin по умолчанию для MGTS Innbox G84:
+    <strong>W52dUEIhBVY2C4at</strong> или <strong>lgxU8+xf975knGTT</strong>
+</p>
+
+<p>
+	Для получения superadmin пароля требуется <strong>только</strong> серийный номер GPON.
+	Для получения admin пароля на ростелеком роутерах и пароля wifi требуется обычный серийный номер.
+</p>
+
+<label>
+    Серийный номер (10 цифр или произвольный):
+    <input id="serial" type="text">
+</label>
+
+<label>
+    Серийный номер GPON:
+    <input id="serialGpon" type="text">
+</label>
+
+<button onclick="generate()">Сгенерировать</button>
+
+<pre id="output"></pre>
+
+<script>
+const ALPHABET = "23456789abcdefghijk";
+
+function assert(condition, message) {
+    if (!condition) {
+        throw new Error(message || "Assertion failed");
+    }
+}
+
+function base64FromArrayBuffer(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    for (let b of bytes) {
+        binary += String.fromCharCode(b);
+    }
+    return btoa(binary);
+}
+
+async function sha256Base64(text) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(text);
+    const digest = await crypto.subtle.digest("SHA-256", data);
+    return base64FromArrayBuffer(digest);
+}
+
+/* ----------------- ADMIN PASSWORD ----------------- */
+
+function adminPassword10Digits(serial) {
+    assert(/^\d{10}$/.test(serial), "Серийный номер должен содержать 10 цифр");
+
+    const salt = "iskratel";
+    const digits = serial.split("").reverse().map(Number);
+    const v7 = digits.length;
+
+    const v11 = new Array(v7).fill(0);
+    v11[0] = digits[0] + salt.charCodeAt(0);
+
+    for (let i = 1; i < v7; i++) {
+        if (i >= 8) {
+            v11[i] = v11[i - 1] + digits[i] + 32;
+        } else {
+            v11[i] = v11[i - 1] + digits[i] + salt.charCodeAt(i);
+        }
+    }
+
+    const v8 = Math.ceil(v7 / 8) * 8;
+    const acc = new Array(8).fill(0);
+
+    for (let i = 0; i < v8; i++) {
+        if (i >= v7) {
+            acc[i % 8] += v11[i % v7];
+        } else {
+            acc[i % 8] += v11[i];
+        }
+    }
+
+    return acc.map(a => ALPHABET[a % 19]).join("");
+}
+
+function adminPassword16Chars(serial) {
+    assert(serial.length === 16, "Серийный номер должен быть длиной 16 символов");
+
+    const salt = "iskrateliskratel";
+    const v12 = new Array(16).fill(0);
+
+    v12[0] = serial.charCodeAt(0) + salt.charCodeAt(0);
+    for (let i = 1; i < 16; i++) {
+        v12[i] = v12[i - 1] + serial.charCodeAt(i) + salt.charCodeAt(i);
+    }
+
+    const v13 = [];
+    for (let i = 0; i < 8; i++) {
+        v13.push(v12[i] + v12[i + 8]);
+    }
+
+    return v13.map(x => ALPHABET[x % 19]).join("");
+}
+
+async function adminPasswordOther(serial) {
+    const prefix = "Iskrateliadmin";
+    const b64 = await sha256Base64(prefix + serial);
+    return b64.slice(0, 8);
+}
+
+async function adminPassword(serial) {
+    if (/^\d{10}$/.test(serial)) {
+        return adminPassword10Digits(serial);
+    } else if (serial.length === 16) {
+        return adminPassword16Chars(serial);
+    } else {
+        return await adminPasswordOther(serial);
+    }
+}
+
+/* ----------------- SUPERADMIN PASSWORD ----------------- */
+
+async function superadminPassword(serial, prefix, length = 16) {
+    const b64 = await sha256Base64(prefix + serial);
+    return b64.slice(0, length);
+}
+
+/* ----------------- WIFI PASSWORD ----------------- */
+
+function wifiPassword(serial, length = 10) {
+    assert(/^\d{10}$/.test(serial), "Серийный номер должен содержать 10 цифр");
+
+    const alphabetMain = "23456789abdefghiajk";
+    const alphabetFirst = "ABDEFGHAJK";
+    const salt = "rostelecom";
+
+    const digits = serial.split("").reverse().map(Number);
+    const v7 = digits.length;
+
+    const v16 = new Array(v7).fill(0);
+    v16[0] = digits[0] + salt.charCodeAt(0);
+
+    for (let i = 1; i < v7; i++) {
+        if (i >= 10) {
+            v16[i] = v16[i - 1] + digits[i] + 32;
+        } else {
+            v16[i] = v16[i - 1] + digits[i] + salt.charCodeAt(i);
+        }
+    }
+
+    const v8 = Math.ceil(v7 / 10) * 10;
+    const acc = new Array(10).fill(0);
+
+    for (let i = 0; i < v8; i++) {
+        if (i >= v7) {
+            acc[i % 10] += v16[i % v7];
+        } else {
+            acc[i % 10] += v16[i];
+        }
+    }
+
+    const password = [
+        alphabetFirst[acc[0] % 19],
+        alphabetMain[acc[1] % 19],
+        alphabetMain[acc[2] % 19],
+        alphabetMain[acc[3] % 19],
+        alphabetMain[acc[4] % 19],
+        alphabetMain[acc[5] % 19],
+        alphabetMain[acc[6] % 19],
+        alphabetMain[acc[7] % 19],
+    ];
+
+    if (length === 10) {
+        password.push(alphabetMain[acc[8] % 19]);
+        password.push(alphabetMain[acc[9] % 19]);
+    }
+
+    return password.join("");
+}
+
+/* ----------------- UI ----------------- */
+
+async function generate() {
+    const serial = document.getElementById("serial").value.trim();
+    const serialGpon = document.getElementById("serialGpon").value.trim().toUpperCase();
+    const out = [];
+
+    try {
+        if (serial) {
+            out.push("Пароль учетной записи Admin (Ростелеком): " + await adminPassword(serial));
+            out.push("Пароль Wi-Fi Ростелеком: " + wifiPassword(serial));
+            out.push("Пароль Wi-Fi MGTS: " + wifiPassword(serial, 8));
+            out.push("");
+        }
+
+        if (serialGpon) {
+            out.push("Superadmin Ростелеком Iskratel: " +
+                await superadminPassword(serialGpon, "Iskratel"));
+            out.push("Superadmin MGTS (Innbox G84): " +
+                await superadminPassword(serialGpon, "MGTS"));
+        }
+
+        document.getElementById("output").textContent = out.join("\n");
+    } catch (e) {
+        document.getElementById("output").textContent = "Ошибка: " + e.message;
+    }
+}
+</script>
+</body>
+</html>
