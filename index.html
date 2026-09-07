@@ -38,12 +38,8 @@
 
 <p>
     Пароль superadmin по умолчанию для MGTS Innbox G84:
-    <strong>W52dUEIhBVY2C4at</strong> или <strong>lgxU8+xf975knGTT</strong>
-</p>
-
-<p>
-	Для получения superadmin пароля требуется <strong>только</strong> серийный номер GPON.
-	Для получения admin пароля на ростелеком роутерах и пароля wifi требуется обычный серийный номер.
+    <strong>W52dUEIhBVY2C4at</strong> на прошивке 1.7.1102 (2022 года) или <strong>lgxU8+xf975knGTT</strong> на прошивке 1.7.1093 и ниже.
+	Для прошивок 2023 года и новее генерируется по серийнику GPON, учетные записи superadmin и mgts отключены в thttpd.	Пароль superadmin позволяет через ssh включить учетные записи mgts и superadmin в web интерфейсе.
 </p>
 
 
@@ -90,7 +86,9 @@ async function sha256Base64(text) {
 /* ----------------- ADMIN PASSWORD ----------------- */
 
 function adminPassword10Digits(serial) {
-    assert(/^\d{10}$/.test(serial), "Серийный номер должен содержать 10 цифр");
+    if (!/^\d{10}$/.test(serial)) {
+		return "Серийный номер должен содержать 10 цифр";
+	}
 
     const salt = "iskratel";
     const digits = serial.split("").reverse().map(Number);
@@ -122,7 +120,9 @@ function adminPassword10Digits(serial) {
 }
 
 function adminPassword16Chars(serial) {
-    assert(serial.length === 16, "Серийный номер должен быть длиной 16 символов");
+    if (!serial.length === 16) {
+		return "Серийный номер должен быть длиной 16 символов";
+	}
 
     const salt = "iskrateliskratel";
     const v12 = new Array(16).fill(0);
@@ -163,10 +163,17 @@ async function superadminPassword(serial, prefix, length = 16) {
     return b64.slice(0, length);
 }
 
+async function manufacturerPassword(serial, prefix, length = 16) {
+    const b64 = await sha256Base64(prefix + "_" + serial);
+    return b64.slice(0, length);
+}
+
 /* ----------------- WIFI PASSWORD ----------------- */
 
 function wifiPassword(serial, length = 10) {
-    assert(/^\d{10}$/.test(serial), "Серийный номер должен содержать 10 цифр");
+	if (!/^\d{10}$/.test(serial)) {
+		return "Серийный номер должен содержать 10 цифр";
+	}
 
     const alphabetMain = "23456789abdefghiajk";
     const alphabetFirst = "ABDEFGHAJK";
@@ -229,6 +236,9 @@ async function generate() {
             out.push("Пароль Wi-Fi Ростелеком: " + wifiPassword(serial));
             out.push("Пароль Wi-Fi MGTS: " + wifiPassword(serial, 8));
             out.push("");
+			out.push("Superadmin Ростелеком Innbox E80: " + await superadminPassword(serial, "Iskratel"));
+			out.push("Manufacturer для customer_id=1 InnboxG84 " + await manufacturerPassword(serial, "Iskratel"));
+			out.push("");
         }
 
         if (serialGpon) {
